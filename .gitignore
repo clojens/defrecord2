@@ -1,3 +1,7 @@
-lib
-classes
-*jar
+lib/
+classes/
+target/
+*.tmp
+tmp*
+.lein-*
+*.jar
