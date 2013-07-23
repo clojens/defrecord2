@@ -1,21 +1,27 @@
-(ns defrecord2.defrecord2-core
+(ns defrecord2.core
   "Enhanced defrecord support"
   (:require [clojure.contrib.str-utils2 :as str2]
-            [clojure.string :as str])
-  (:use [clojure.contrib.generic.functor :only (fmap)]
-        [clojure.set :only (difference)]
-        [clojure.string :only (join)]
-        [clojure.pprint :only (simple-dispatch pprint)]
-        [clojure.zip :only (zipper)]
-        [matchure :only (if-match)])
-  (:import [clojure.lang IPersistentList IPersistentVector IPersistentMap IPersistentSet ISeq]))
+            [clojure.string :as str]
+            [clojure.set :refer [difference]]
+            [clojure.string :refer [join]]
+            [clojure.pprint :refer [simple-dispatch pprint]]
+            [clojure.contrib.generic.functor :refer [fmap]]
+            [clojure.zip :refer [zipper]]
+            [matchure :refer [if-match]])
+  (:import [clojure.lang IPersistentList IPersistentVector
+            IPersistentMap IPersistentSet ISeq]))
 
-;; internal helpers for name conversion
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Conversion and string formatting helpers                            ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn is-upper? [s]
   (= (.toUpperCase s) s))
 
-(defn assemble-words [parts]
+(defn assemble-words
+  "Assembles words from a non-whitespace string of words LikeTheseAre."
+  [parts]
   (loop [remaining-parts parts result []]
     (if (seq remaining-parts)
       (let [part (first remaining-parts)]
@@ -34,8 +40,8 @@
         words (assemble-words parts)]
     (join "-" words)))
 
-;; internal helpers for changing records via maps
 
+;;for changing records via maps
 (defn set-record-field
   "Set a single field on a record."
   [source [key value]]
@@ -46,10 +52,13 @@
   [initial value-map]
   (reduce set-record-field initial value-map))
 
-;; universal constructor function
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Universal constructor methods                                       ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti new-record
-  "A universal constructor function that can create a new instance of any type of record from a current record and a new value map."
+  "A universal constructor function that can create a new instance of any type
+  of record from a current record and a new value map."
   (fn [initial value-map] (class initial)))
 
 (defmacro make-universal-constructor
@@ -58,8 +67,6 @@
   `(defmethod new-record ~type-name
      [initial# value-map#]
      (~ctor-name initial# value-map#)))
-
-;; internal helper for generating constructor function
 
 (defn expected-keys? [map expected-key-set]
   (not (seq (difference (set (keys map)) expected-key-set))))
@@ -75,21 +82,30 @@
                    (isa? (class initial#) ~type-name))
                (map? value-map#)
                (expected-keys? value-map# ~(set (map keyword field-list)))]}
-        (set-record-fields (if (nil? initial#) ~default-record initial#) value-map#))))
+        (set-record-fields
+         (if (nil? initial#) ~default-record initial#) value-map#))))
 
-;; internal helpers for printing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Printing *out* streams                                              ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn remove-nil-native-fields [native-keys record]
+(defn remove-nil-native-fields
+  "Removes fields which aren't part of the defrecord."
+  [native-keys record]
   (let [extra-keys (difference (set (keys record))
                                native-keys)]
-    (let [contents (reduce into [] (for [[k v] record]
-                                     (if (or (contains? extra-keys k)
-                                             (not (nil? v)))
-                                       [k v])))]
+    (let [contents (reduce
+                    into []
+                    (for [[k v] record]
+                      (if (or (contains? extra-keys k)
+                              (not (nil? v)))
+                        [k v])))]
       (apply array-map contents))))
 
 (defmacro print-record
-  "Low-level function to print a record to a stream using the specified constructor name in the print output and using the provided write-contents function to write out the contents of the record (represented as a map)."
+  "Low-level function to print a record to a stream using the specified
+  constructor name in the print output and using the provided write-contents
+  function to write out the contents of the record (represented as a map)."
   [ctor ctor-name native-keys record stream write-contents]
   `(do
      (.write ~stream (str "(" ~ctor-name " "))
@@ -97,35 +113,52 @@
      (.write ~stream  ")")))
 
 (defn print-record-contents
-  "Simply write the contents of a record to a stream as a string. Used for basic printing."
+  "Simply write the contents of a record to a stream as a string. Used for
+  basic printing."
   [stream contents]
   (.write stream (str contents)))
 
-(defmacro setup-print-record-method [ctor ctor-name native-keys type-name method-name]
-  `(defmethod ~method-name ~type-name [record# writer#]
-              (print-record ~ctor ~ctor-name ~native-keys record# writer# (partial print-record-contents writer#))))
+(defmacro setup-print-record-method
+  [ctor ctor-name native-keys type-name method-name]
+  `(defmethod ~method-name ~type-name
+     [record# writer#]
+     (print-record ~ctor ~ctor-name ~native-keys record# writer#
+                   (partial print-record-contents writer#))))
 
 (defmacro setup-print-record
-  "Define the print methods to print a record nicely (so that records will print in a form that can be evaluated as itself)."
+  "Define the print methods to print a record nicely (so that records will
+  print in a form that can be evaluated as itself)."
   [ctor ctor-name native-keys type-name]
 
-  `(do (setup-print-record-method ~ctor ~ctor-name ~native-keys ~type-name print-method)
-       (setup-print-record-method ~ctor ~ctor-name ~native-keys ~type-name print-dup)))
+  `(do
+     (setup-print-record-method
+      ~ctor ~ctor-name ~native-keys ~type-name print-method)
+
+     (setup-print-record-method
+      ~ctor ~ctor-name ~native-keys ~type-name print-dup)))
 
 (defn generate-record-pprint
-  "Return a function that can be used in the pprint dispatch mechanism to handle a specific constructor name."
+  "Return a function that can be used in the pprint dispatch mechanism to
+  handle a specific constructor name."
   [ctor ctor-name native-keys]
   (fn [record]
     ;; clojure.pprint/pprint-map is private hence the dance here:
-    (print-record ctor ctor-name native-keys record *out* @#'clojure.pprint/pprint-map)))
+    (print-record
+     ctor ctor-name native-keys record *out* @#'clojure.pprint/pprint-map)))
 
-;; internal helpers - walking data structures
+;; 2.
+;; ==========================
 
 ;; w - walker function
 ;; f - mutator function
 ;; n - node in data tree being walked
 
 ;; helper - generating walking methods like this:
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Walking data structure usage example                                ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (comment (defmethod prewalk2 Foo [f foo]
                     (if-let [foo2 (f foo)]
                       (new-foo foo2 {:a (prewalk2 f (:a foo2))
@@ -134,6 +167,10 @@
          (defmethod postwalk2 Foo [f foo]
                     (f (new-foo foo {:a (postwalk2 f (:a foo))
                                      :b (postwalk2 f (:b foo))}))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Multimethod dispatch functions for walkers                          ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti walk2 (fn [w f n] (class n)))
 
@@ -158,11 +195,16 @@
 (defmethod walk2 ISeq [w f n]
            (map (partial w f) n))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Walker macros                                                       ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmacro walking-helper-field
   ([w f n field]
      `[~(keyword field) (~w ~f (~(keyword field) ~n))])
   ([w f n field & more]
-     `(concat (walking-helper-field ~w ~f ~n ~field) (walking-helper-field ~w ~f ~n ~@more))))
+     `(concat (walking-helper-field ~w ~f ~n ~field)
+              (walking-helper-field ~w ~f ~n ~@more))))
 
 (defmacro walking-helper-fields
   [w f n fields]
@@ -185,10 +227,14 @@
 (defmacro make-postwalk2-method
   "Define the methods used to walk data structures."
   [ctor-name type-name field-list]
-  `(defmethod postwalk2 ~type-name [f# n#]
-              (f# (~ctor-name n# (walking-helper-fields postwalk2 f# n# ~field-list)))))
+  `(defmethod postwalk2 ~type-name
+     [f# n#]
+     (f# (~ctor-name n# (walking-helper-fields postwalk2 f# n# ~field-list)))))
 
-;;;; zipper methods
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Zipper `record-branch?` dispatch                                    ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti record-branch?
   "The branch? function to use when creating zippers on records."
@@ -211,13 +257,16 @@
 
 (prefer-method record-branch? IPersistentList ISeq)
 
+;; create
 (defmacro make-record-branch?-method
   "Generate the record-branch? method for a type."
   [type-name]
   `(defmethod record-branch? ~type-name [_#]
               true))
 
-;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Zipper `record-node-children` dispatch                              ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti record-node-children
   "The node-children method to use when creating zippers on records."
@@ -237,6 +286,10 @@
 
 (prefer-method record-node-children IPersistentList ISeq)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Zipper `record-node-children` helpers                               ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmacro rnc-helper-field
   ([n field]
      `[(~(keyword field) ~n)])
@@ -255,7 +308,9 @@
   `(defmethod record-node-children ~type-name [node#]
               (rnc-helper-fields node# ~field-list)))
 
-;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Zipper `record-make-node` dispatch                                  ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti record-make-node
   "The make-node method to use when creating zippers on records."
@@ -275,8 +330,14 @@
 
 (prefer-method record-make-node IPersistentList ISeq)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Appliance of symbols and types                                      ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmacro apply-to-symbol [f count]
-  "Return a function that takes a vector of args and which will do the equivalent of (apply f args). This is suitable for getting 'apply' like functionality from generated record constructors."
+  "Return a function that takes a vector of args and which will do the
+  equivalent of (apply f args). This is suitable for getting 'apply' like
+  functionality from generated record constructors."
   `(fn [x#]
      (let [~'x x#]
        (~f ~@(map (fn [i] (list 'nth 'x i)) (range count)))))  )
@@ -285,13 +346,21 @@
   "Generate the record-make-node method for a type."
   [type-name field-list]
   `(defmethod record-make-node ~type-name [_# children#]
-              ((apply-to-symbol ~(symbol (str (.getName type-name) ".")) ~(count field-list))
+              ((apply-to-symbol
+                ~(symbol (str (.getName type-name) ".")) ~(count field-list))
                children#)))
 
-;; helpers for custom zippers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Custom zippers support                                              ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn record-branch?-or-map
-  "Creates a custom function to use as the branch? fn in the zipper. The field-map contains keys which are classes and values which are sequences of keywords identifying fields in the class. These keywords identify the fields, and their order, which will be visited as children by the zipper. If an empty sequence is placed as a value in the field-map then that class will not be considered a branch point for the zipper."
+  "Creates a custom function to use as the branch? fn in the zipper.
+  The field-map contains keys which are classes and values which are sequences
+  of keywords identifying fields in the class. These keywords identify the
+  fields, and their order, which will be visited as children by the zipper. If
+  an empty sequence is placed as a value in the field-map then that class will
+  not be considered a branch point for the zipper."
   [field-map]
   (if (seq field-map)
     (fn [node]
@@ -304,7 +373,10 @@
     record-branch?))
 
 (defn record-node-children-or-map
-  "Creates a custom function to use as the children fn in the zipper. The field-map contains keys which are classes and values which are sequences of keywords identifying fields in the class. These keywords identify the fields, and their order, which will be visited as children by the zipper."
+  "Creates a custom function to use as the children fn in the zipper.
+  The field-map contains keys which are classes and values which are sequences
+  of keywords identifying fields in the class. These keywords identify the
+  fields, and their order, which will be visited as children by the zipper."
   [field-map]
   (if (seq field-map)
     (fn [node]
@@ -348,12 +420,13 @@
           (record-ctor node children-map))
         (record-make-node node children)))))
 
-;; record?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Predicates `record?` and `make-record?`                             ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti record? (fn [x] (.getName (class x))))
 
-(defmethod record? :default [_]
-           false)
+(defmethod record? :default [_] false)
 
 (defmacro make-record?
   "Define the implementation of record? for this type."
@@ -362,32 +435,35 @@
      [_#]
      true))
 
-;; record pattern matching
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Pattern matching and regular expressions                            ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmulti record-matcher (fn [form]
-                           (let [dispatch-value (if (and (list? form)
-                                                         (symbol? (first form)))
-                                                  (let [sym (first form)]
-                                                    (if-let [resolved (resolve sym)]
-                                                      (try
-                                                        (let [test-obj (resolved {})]
-                                                          (if (record? test-obj)
-                                                            (symbol (.getName (class test-obj)))))
-                                                        (catch IllegalArgumentException e
-                                                          ;;ignore this
-                                                          ))
-                                                      (throw (RuntimeException. (str "Unknown symbol: " sym))))))]
-                             (or dispatch-value
-                                 :default))))
+(defmulti record-matcher
+  (fn [form]
+    (let [dispatch-value (if (and (list? form)
+                                  (symbol? (first form)))
+                           (let [sym (first form)]
+                             (if-let [resolved (resolve sym)]
+                               (try
+                                 (let [test-obj (resolved {})]
+                                   (if (record? test-obj)
+                                     (symbol (.getName (class test-obj)))))
+                                 (catch IllegalArgumentException e
+                                   ;;ignore this
+                                   ))
+                               (throw (RuntimeException. (str "Unknown symbol: " sym))))))]
+      (or dispatch-value
+          :default))))
 
 (defn seq-to-list [s]
   (reverse (into '() s)))
 
 (defmethod record-matcher :default [x]
-           (if (list? x)
-             (let [converted-x (seq-to-list (map record-matcher x))]
-               converted-x)
-             x))
+  (if (list? x)
+    (let [converted-x (seq-to-list (map record-matcher x))]
+      converted-x)
+    x))
 
 (defmacro make-record-matcher
   "Generate the record-make-node method for a type."
@@ -403,7 +479,9 @@
   ([[record in] expr fail-expr]
      `(matchure/if-match [~(record-matcher record) ~in] ~expr ~fail-expr)))
 
-;; public entry points
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Public entry points                                                 ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmulti prewalk2 (fn [f n] (class n)))
 
@@ -427,8 +505,13 @@
              (record-make-node-or-map field-map ctor-map)
              node)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Destruction and removal of fields                                   ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmulti dissoc2
-  "Enhanced version of dissoc that will return a new record of the same type with the given fields removed.
+  "Enhanced version of dissoc that will return a new record of the same type
+  with the given fields removed.
   (Calling dissoc on a record will yield a map.)"
   (fn [n & ks] (class n)))
 
@@ -446,12 +529,19 @@
   `(defmethod dissoc2 ~type-name [n# & ks#]
               (apply dissoc2* ~ctor-name ~native-keys n# ks#)))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Constructor macro                                                   ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defmacro defrecord2
-  "Defines a record and sets up constructor functions, printing, and pprinting for the new record type."
+  "Defines a record and sets up constructor functions, printing,
+  and pprinting for the new record type."
   ([type-name field-list]
+
      `(defrecord2 ~type-name ~field-list
         ;; invoke defrecord2 with default constructor function name
         ~(symbol (str "new-" (camel-to-dashed (str type-name))))))
+
   ([type-name field-list ctor-name & opts+specs]
      `(do
         ;; define the record
@@ -461,7 +551,8 @@
         (make-record-constructor ~ctor-name
                                  ~type-name
                                  ~field-list
-                                 (~(symbol (str type-name ".")) ~@(repeat (count field-list) nil)))
+                                 (~(symbol (str type-name "."))
+                                   ~@(repeat (count field-list) nil)))
         (make-universal-constructor ~ctor-name ~type-name)
 
         (make-record? ~type-name)
@@ -471,7 +562,8 @@
         (make-postwalk2-method ~ctor-name ~type-name ~field-list)
 
         ;; setup dissoc2 method
-        (make-dissoc2-method ~ctor-name ~type-name (set (keys (~ctor-name {}))))
+        (make-dissoc2-method
+         ~ctor-name ~type-name (set (keys (~ctor-name {}))))
 
         ;; setup zipper methods
         (make-record-branch?-method ~type-name)
@@ -484,8 +576,9 @@
         ;; setup printing
         (let [empty-record# (~ctor-name {})
               native-keys# (set (keys empty-record#))
-              pprint-fn# (generate-record-pprint ~ctor-name (quote ~ctor-name) native-keys#)]
-          (setup-print-record ~ctor-name (quote ~ctor-name) native-keys# ~type-name)
+              pprint-fn# (generate-record-pprint
+                          ~ctor-name (quote ~ctor-name) native-keys#)]
+          (setup-print-record
+           ~ctor-name (quote ~ctor-name) native-keys# ~type-name)
           ;; setup clojure.pprinting
           (.addMethod simple-dispatch ~type-name pprint-fn#)))))
-

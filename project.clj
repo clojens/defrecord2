@@ -1,6 +1,5 @@
-(defproject defrecord2 "1.0.0-SNAPSHOT"
-  :description "Enhanced clojure records."
-  :dependencies [[org.clojure/clojure "1.2.0"]
+(defproject defrecord2 "1.0.1"
+  :description "Enhanced clojure records, personal fork from supersym."
+  :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.clojure/clojure-contrib "1.2.0"]
-                 [matchure "0.10.1"]]
-  :dev-dependencies [[swank-clojure "1.2.1"]])
+                 [matchure "0.10.1"]])

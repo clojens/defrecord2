@@ -1,6 +1,6 @@
-(ns defrecord2.test-defrecord2-core
+(ns defrecord2.test.core
   (:require [clojure.zip :as z]
-            [defrecord2.test-record-helper :as helper])
+            [defrecord2.test.helper :as helper])
   (:use [clojure test]
         [clojure.string :only (upper-case)]
         [defrecord2.test-record-helper :only (new-foo-helper)]
@@ -132,10 +132,10 @@
 
        (new-foo {:x {:a 101 :b 201}})
        (new-foo {:x {:a 100 :b 200}})
-       
+
        (new-foo {:x #{101 201}})
        (new-foo {:x #{100 200}})
-       
+
        (new-foo {:x {:a 101
                      :b (new-foo {:x {:a 101 :b 201}})}})
        (new-foo {:x {:a 100
@@ -302,7 +302,7 @@
     (let [zipper (record-zip tree {Foo [:x :y]})]
       (is (= (new-bar {:a (new-foo {:x -1 :y 20}) :b (new-foo {:x 100 :y 200})})
              (z/root (z/edit (z/next (z/next zipper)) (constantly -1))))))
-    
+
     ;; if fields are specifies in the field-map then the new children
     ;; are passed into the ctor fn in a map keyed by field keyword
     (let [zipper (record-zip tree {Foo [:x :y]} {Foo (fn [node {:keys (x y)}]
@@ -374,11 +374,11 @@
        '(1 2) '() [1 2]))
 
 (deftest test-record-zipper-on-maps
-  ;; record-branch?  
+  ;; record-branch?
   (are [expected node] (= expected (record-branch? node))
        false {}
        true {:a 1})
-  ;; record-node-children  
+  ;; record-node-children
   (are [expected node] (= expected (record-node-children node))
        nil {}
        [[:a 1]] {:a 1}
@@ -406,7 +406,7 @@
                (z/append-child [:c 999])
                z/down z/down z/right z/down z/down z/right
                (z/edit (fn [loc] 42))
-               z/root))))) 
+               z/root)))))
 
 (deftest test-pattern-matching
   (is (= 100 (match-record [(new-foo {:x 1

@@ -1,5 +1,5 @@
-(ns defrecord2.test-record-helper
-  (:use [defrecord2.defrecord2-core :only (defrecord2)]))
+(ns defrecord2.test.helper
+  (:use [defrecord2.core :only (defrecord2)]))
 
 ;; these are for testing record pattern matching using types from
 ;; another namespace
